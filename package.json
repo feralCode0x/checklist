@@ -1,6 +1,6 @@
 {
   "name": "checklist",
-  "homepage": "https://github.io",
+  "homepage": "https://feralCode0x.github.io/checklist",
   "scripts": {
     "start": "expo start",
     "android": "expo start --android",
