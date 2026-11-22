@@ -11,47 +11,85 @@ import {
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import { supabase } from './supabase';
 
-const TASKS_STORAGE_KEY = 'tasks';
-
-const TaskListScreen = ({ navigation, route }) => {
+const TaskListScreen = ({ navigation, onLogout}) => {
     const [tasks, setTasks] = useState([]);
+    const [userEmail, setUserEmail] = useState('');
     const [editingTask, setEditingTask] = useState(null);
     const [editedTask, setEditedTask] = useState(null);
 
     useEffect(() => {
-        loadTasks();
+        initSessionAndLoadTasks();
     }, []);
 
-    useEffect(() => {
-        saveTasks();
+   useEffect(() => {
         navigation.setOptions({
-            title: `Checklist `,
+            title: 'Checklist',
+            headerRight: () => (
+                <TouchableOpacity
+                    onPress={onLogout}
+                    style={{
+                        backgroundColor: 'white',
+                        paddingHorizontal: 12,
+                        paddingVertical: 6,
+                        borderRadius: 8,
+                        marginRight: 12,
+                        borderWidth: 1,
+                        borderColor: '#b0c4de',
+                        flexDirection: 'row',
+                        alignItems: 'center',
+                    }}
+                >
+                    <Ionicons name="ios-log-out-outline" size={18} color="#333" style={{ marginRight: 4 }} />
+                    <Text style={{ color: '#333', fontWeight: 'bold', fontSize: 13 }}>
+                        Cerrar sesión
+                    </Text>
+                </TouchableOpacity>
+            ),
         });
-    }, [tasks]);
+    }, [navigation, onLogout]);
 
-    const loadTasks = async () => {
+    const initSessionAndLoadTasks = async () => {
         try {
-            const storedTasks = await AsyncStorage.getItem(TASKS_STORAGE_KEY);
-            if (storedTasks !== null) {
-                setTasks(JSON.parse(storedTasks));
+            const sessionData = await AsyncStorage.getItem('userSession');
+            if (sessionData) {
+                const { email } = JSON.parse(sessionData);
+                setUserEmail(email);
+                fetchTasks(email);
             }
         } catch (error) {
-            console.error('Error loading tasks from AsyncStorage:', error);
+            console.error('Error cargando sesión:', error);
         }
     };
 
-    const saveTasks = async () => {
-        try {
-            await AsyncStorage.setItem(TASKS_STORAGE_KEY, JSON.stringify(tasks));
-        } catch (error) {
-            console.error('Error saving tasks to AsyncStorage:', error);
+    const fetchTasks = async (email) => {
+        const { data, error } = await supabase
+            .from('tasks')
+            .select('*')
+            .eq('user_email', email)
+            .order('created_at', { ascending: false });
+
+        if (error) {
+            console.error('Error cargando notas de Supabase:', error);
+        } else {
+            setTasks(data || []);
         }
     };
 
-    const handleDeleteTask = (taskId) => {
-        const updatedTasks = tasks.filter((task) => task.id !== taskId);
-        setTasks(updatedTasks);
+    const handleDeleteTask = async (taskId) => {
+        const { error } = await supabase
+            .from('tasks')
+            .delete()
+            .eq('id', taskId);
+
+        if (error) {
+            Alert.alert('Error', 'No se pudo eliminar la nota.');
+            console.error(error);
+            return;
+        }
+
+        setTasks((prevTasks) => prevTasks.filter((task) => task.id !== taskId));
     };
 
     const handleEditTask = (taskId) => {
@@ -60,9 +98,24 @@ const TaskListScreen = ({ navigation, route }) => {
         setEditedTask({ ...taskToEdit });
     };
 
-    const handleSaveTask = () => {
-        if (!editedTask || !editedTask.name) {
+    const handleSaveTask = async () => {
+        if (!editedTask || !editedTask.name.trim()) {
             Alert.alert('Validation Error', 'Task name is required.');
+            return;
+        }
+
+        const { error } = await supabase
+            .from('tasks')
+            .update({
+                name: editedTask.name.trim(),
+                description: editedTask.description ? editedTask.description.trim() : '',
+                category: editedTask.category ? editedTask.category.trim() : '',
+            })
+            .eq('id', editingTask);
+
+        if (error) {
+            Alert.alert('Error', 'No se pudo actualizar la nota.');
+            console.error(error);
             return;
         }
 
@@ -72,26 +125,14 @@ const TaskListScreen = ({ navigation, route }) => {
         setTasks(updatedTasks);
         setEditingTask(null);
         setEditedTask(null);
-        saveTasks();
-        navigation.setOptions({
-            params: {
-                tasks: updatedTasks,
-            },
-        });
     };
 
     const renderItem = ({ item }) => (
         <View style={styles.taskItem}>
             <View style={styles.taskInfo}>
-                <Text style={styles.taskName}>
-                    <Text style={styles.boldText}></Text> {item.name}
-                </Text>
-                <Text style={styles.taskDescription}>
-                    <Text style={styles.boldText}></Text> {item.description}
-                </Text>
-                <Text style={styles.taskCategory}>
-                    <Text style={[styles.italicText, styles.boldText]}></Text> {item.category}
-                </Text>
+                <Text style={styles.taskName}>{item.name}</Text>
+                <Text style={styles.taskDescription}>{item.description}</Text>
+                <Text style={styles.taskCategory}>{item.category}</Text>
             </View>
 
             <View style={styles.buttonsContainer}>
@@ -114,18 +155,19 @@ const TaskListScreen = ({ navigation, route }) => {
         <View style={styles.container}>
             <FlatList
                 data={tasks}
-                keyExtractor={(item) => item.id}
+                keyExtractor={(item) => item.id.toString()}
                 renderItem={renderItem}
                 style={styles.flatList}
             />
 
             <TouchableOpacity
                 style={styles.addButton}
-                onPress={() => navigation.navigate('AddTask', { tasks, setTasks })}
+                onPress={() => navigation.navigate('AddTask', { tasks, setTasks, userEmail })}
             >
                 <Ionicons name="ios-add" size={36} color="white" />
             </TouchableOpacity>
-            <Modal
+
+              <Modal
                 visible={editingTask !== null}
                 animationType="slide"
                 transparent={true}
@@ -134,14 +176,18 @@ const TaskListScreen = ({ navigation, route }) => {
                     setEditedTask(null);
                 }}
             >
-                <TouchableOpacity
-                    style={styles.editTaskModal}
-                    activeOpacity={1} // Disables the default opacity effect
-                    onPress={() => {
-                        setEditingTask(null);
-                        setEditedTask(null);
-                    }}
-                >
+                <View style={styles.editTaskModal}>
+                    {/* Fondo oscuro que cierra el modal solo si haces clic fuera de la caja */}
+                    <TouchableOpacity
+                        style={StyleSheet.absoluteFill}
+                        activeOpacity={1}
+                        onPress={() => {
+                            setEditingTask(null);
+                            setEditedTask(null);
+                        }}
+                    />
+
+                    {/* Caja blanca del formulario (ya no está dentro del TouchableOpacity) */}
                     <View style={styles.editTaskContainer}>
                         <Text style={styles.editTaskTitle}>Edit Task</Text>
                         <TextInput
@@ -172,60 +218,32 @@ const TaskListScreen = ({ navigation, route }) => {
                             <Ionicons name="ios-checkmark-circle" size={36} color="blue" />
                         </TouchableOpacity>
                     </View>
-                </TouchableOpacity>
+                </View>
             </Modal>
         </View>
     );
 };
 
 const styles = StyleSheet.create({
-    container: {
-        flex: 1,
-        padding: 16,
-        backgroundColor: '#fff7bf', // Light blue background
-    },
+    container: { flex: 1, padding: 16, backgroundColor: '#fff7bf' },
     taskItem: {
         flexDirection: 'row',
         justifyContent: 'space-between',
         alignItems: 'center',
         borderWidth: 1,
-        borderColor: '#b0c4de', // Lighter blue border color
+        borderColor: '#b0c4de',
         borderRadius: 8,
         padding: 16,
         marginBottom: 8,
-        backgroundColor: 'white', // White background
+        backgroundColor: 'white',
     },
-    taskInfo: {
-        flex: 1,
-    },
-    taskName: {
-        fontSize: 16,
-        fontWeight: 'bold',
-        color: '#333', // Dark text color
-    },
-    taskCategory: {
-        color: '#3498db', // Blue text color
-        fontStyle: 'italic', // Italic style for category
-    },
-    boldText: {
-        fontWeight: 'bold',
-    },
-    italicText: {
-        fontStyle: 'italic',
-    },
-    deleteButton: {
-        backgroundColor: '#1e90ff', // Dodger blue background
-        borderRadius: 10,
-        padding: 5,
-        marginRight: 8,
-    },
-    editButton: {
-        backgroundColor: '#1e90ff', // Dodger blue background
-        borderRadius: 10,
-        padding: 5,
-    },
+    taskInfo: { flex: 1 },
+    taskName: { fontSize: 16, fontWeight: 'bold', color: '#333' },
+    taskCategory: { color: '#3498db', fontStyle: 'italic' },
+    deleteButton: { backgroundColor: '#1e90ff', borderRadius: 10, padding: 5, marginRight: 8 },
+    editButton: { backgroundColor: '#1e90ff', borderRadius: 10, padding: 5 },
     addButton: {
-        backgroundColor: '#1e90ff', // Dodger blue background
+        backgroundColor: '#1e90ff',
         borderRadius: 50,
         width: 50,
         height: 50,
@@ -236,46 +254,13 @@ const styles = StyleSheet.create({
         justifyContent: 'center',
         alignItems: 'center',
     },
-    flatList: {
-        flex: 1,
-    },
-    buttonsContainer: {
-        flexDirection: 'row',
-    },
-    editTaskModal: {
-        flex: 1,
-        justifyContent: 'center',
-        alignItems: 'center',
-        backgroundColor: 'rgba(0, 0, 0, 0.5)', // Semi-transparent black background
-    },
-    editTaskContainer: {
-        backgroundColor: 'white',
-        padding: 16,
-        borderRadius: 8,
-        width: '80%',
-    },
-    editTaskTitle: {
-        fontSize: 20,
-        fontWeight: 'bold',
-        marginBottom: 16,
-    },
-    editTaskInput: {
-        height: 40,
-        borderColor: '#b0c4de', // Lighter blue border color
-        borderWidth: 1,
-        marginBottom: 16,
-        paddingHorizontal: 8,
-    },
-    saveButton: {
-        // backgroundColor: '#1e90ff', // Dodger blue background
-        borderRadius: 50,
-        width: 50,
-        height: 50,
-        justifyContent: 'center',
-        alignItems: 'center',
-        alignSelf: 'center',
-        marginTop: 16,
-    },
+    flatList: { flex: 1 },
+    buttonsContainer: { flexDirection: 'row' },
+    editTaskModal: { flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: 'rgba(0, 0, 0, 0.5)' },
+    editTaskContainer: { backgroundColor: 'white', padding: 16, borderRadius: 8, width: '80%' },
+    editTaskTitle: { fontSize: 20, fontWeight: 'bold', marginBottom: 16 },
+    editTaskInput: { height: 40, borderColor: '#b0c4de', borderWidth: 1, marginBottom: 16, paddingHorizontal: 8 },
+    saveButton: { borderRadius: 50, width: 50, height: 50, justifyContent: 'center', alignItems: 'center', alignSelf: 'center', marginTop: 16 },
 });
 
-export default TaskListScreen; //export task list screen
+export default TaskListScreen;

@@ -7,15 +7,18 @@ import AddTaskScreen from './screens/AddTaskScreen';
 
 const Stack = createStackNavigator();
 
-const AppNavigator = () => {
-    return (
-        <NavigationContainer>
-            <Stack.Navigator initialRouteName="TaskList">
-                <Stack.Screen name="TaskList" component={TaskListScreen} />
-                <Stack.Screen name="AddTask" component={AddTaskScreen} />
-            </Stack.Navigator>
-        </NavigationContainer>
-    );
+// En AppNavigator.js
+const AppNavigator = ({ onLogout }) => {
+  return (
+    <NavigationContainer>
+      <Stack.Navigator>
+        <Stack.Screen name="TaskList">
+          {(props) => <TaskListScreen {...props} onLogout={onLogout} />}
+        </Stack.Screen>
+        <Stack.Screen name="AddTask" component={AddTaskScreen} />
+      </Stack.Navigator>
+    </NavigationContainer>
+  );
 };
 
 export default AppNavigator;

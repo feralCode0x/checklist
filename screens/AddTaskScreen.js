@@ -1,46 +1,46 @@
-// AddTaskScreen.js
 import React, { useState } from 'react';
 import { View, Text, TextInput, Button, StyleSheet, Alert } from 'react-native';
-import AsyncStorage from '@react-native-async-storage/async-storage';
 import { LogBox } from 'react-native';
-LogBox.ignoreLogs(['Non-serializable values were found in the navigation state',]);
+import { supabase } from './supabase';
+
+LogBox.ignoreLogs(['Non-serializable values were found in the navigation state']);
+
 const AddTaskScreen = ({ navigation, route }) => {
     const [taskName, setTaskName] = useState('');
     const [taskDescription, setTaskDescription] = useState('');
     const [taskCategory, setTaskCategory] = useState('');
 
-    const handleAddTask = () => {
-        // Validation: Task name is necessary
+    const handleAddTask = async () => {
         if (!taskName.trim()) {
             Alert.alert('Validation Error', 'Task name is required.');
             return;
         }
 
-        const newTask = {
-            id: Math.random().toString(),
-            name: taskName.trim(),
-            description: taskDescription.trim(),
-            category: taskCategory.trim(),
-        };
+        const { userEmail, tasks, setTasks } = route.params;
 
-        // Retrieve the existing tasks from AsyncStorage
-        const existingTasks = route.params.tasks || [];
+        const { data, error } = await supabase
+            .from('tasks')
+            .insert([
+                {
+                    user_email: userEmail,
+                    name: taskName.trim(),
+                    description: taskDescription.trim(),
+                    category: taskCategory.trim(),
+                },
+            ])
+            .select();
 
-        // Update the tasks with the new task
-        const updatedTasks = [...existingTasks, newTask];
+        if (error) {
+            Alert.alert('Error', 'No se pudo guardar la nota en Supabase.');
+            console.error(error);
+            return;
+        }
 
-        // Save the updated tasks to AsyncStorage
-        AsyncStorage.setItem('tasks', JSON.stringify(updatedTasks))
-            .then(() => {
-                // Update the tasks state in TaskListScreen
-                route.params.setTasks(updatedTasks);
-            })
-            .catch((error) => {
-                console.error('Error saving tasks to AsyncStorage:', error);
-                Alert.alert('Error', 'Failed to save the task. Please try again.');
-            });
+        if (data && data.length > 0) {
+            setTasks([data[0], ...tasks]);
+        }
 
-        navigation.goBack(); // Navigate back to TaskListScreen
+        navigation.goBack();
     };
 
     return (
@@ -51,21 +51,21 @@ const AddTaskScreen = ({ navigation, route }) => {
                 style={styles.input}
                 placeholder="Task Name *"
                 value={taskName}
-                onChangeText={(text) => setTaskName(text)}
+                onChangeText={setTaskName}
             />
 
             <TextInput
                 style={styles.input}
                 placeholder="Task Description"
                 value={taskDescription}
-                onChangeText={(text) => setTaskDescription(text)}
+                onChangeText={setTaskDescription}
             />
 
             <TextInput
                 style={styles.input}
                 placeholder="Task Category"
                 value={taskCategory}
-                onChangeText={(text) => setTaskCategory(text)}
+                onChangeText={setTaskCategory}
             />
 
             <Button title="Add Task" onPress={handleAddTask} />
@@ -80,25 +80,16 @@ const AddTaskScreen = ({ navigation, route }) => {
 };
 
 const styles = StyleSheet.create({
-    container: {
-        flex: 1,
-        padding: 16,
-        backgroundColor: '#add8e6', // Light blue background
-    },
-    title: {
-        fontSize: 20,
-        fontWeight: 'bold',
-        marginBottom: 16,
-        color: '#333', // Dark text color
-    },
+    container: { flex: 1, padding: 16, backgroundColor: '#add8e6' },
+    title: { fontSize: 20, fontWeight: 'bold', marginBottom: 16, color: '#333' },
     input: {
         height: 40,
-        borderColor: '#b0c4de', // Lighter blue border color
+        borderColor: '#b0c4de',
         borderWidth: 1,
         marginBottom: 16,
         paddingHorizontal: 8,
-        backgroundColor: 'white', // White background
+        backgroundColor: 'white',
     },
 });
 
-export default AddTaskScreen; //export add task screen
+export default AddTaskScreen;
