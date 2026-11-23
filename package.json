@@ -1,13 +1,13 @@
 {
   "name": "checklist",
   "homepage": "https://feralCode0x.github.io/checklist",
-   "scripts": {
+  "scripts": {
     "start": "expo start",
     "android": "expo start --android",
     "ios": "expo start --ios",
     "web": "expo start --web",
-    "predeploy": "npx expo export -p web",
-     "deploy": "gh-pages -d dist --nojekyll"
+    "predeploy": "npx expo export -p web && sed -i 's|src=\"/|src=\"/checklist/|g; s|href=\"/|href=\"/checklist/|g' dist/index.html",
+    "deploy": "gh-pages -d dist -t --nojekyll"
   },
   "dependencies": {
     "@expo/vector-icons": "^13.0.0",
